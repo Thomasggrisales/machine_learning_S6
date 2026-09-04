@@ -248,6 +248,7 @@ st.caption("K-Means · KNN · SVM · Regresión Lineal — todo sobre la relaci�
 _ts = pd.to_datetime(df["timestamp"])
 if _ts.dt.tz is not None:
     _ts = _ts.dt.tz_convert("America/Bogota")
+df["timestamp_local"] = _ts
 df["hora"] = _ts.dt.hour
 umbral = df["Consumo_total"].median()
 df["consumo_alto"] = (df["Consumo_total"] > umbral).astype(int)
@@ -256,15 +257,15 @@ tab_datos, tab_lineal, tab_kmeans, tab_knn, tab_arbol, tab_svm, tab_comparacion 
     ["📊 Datos", "📈 Regresión Lineal", "🟢 K-Means", "🔵 KNN", "🌳 Árbol de Decisión", "🟠 SVM", "⚖️ Comparación"]
 )
 
-# ---------------------------------------------------------------
+
 # TAB: DATOS
 # ---------------------------------------------------------------
 with tab_datos:
     st.subheader("Consumo total vs. Tiempo")
 
     fig_serie, ax_serie = plt.subplots(figsize=(14, 3.5))
-    ax_serie.plot(df["timestamp"], df["Consumo_total"], linewidth=0.8)
-    ax_serie.set_xlabel("Fecha")
+    ax_serie.plot(df["timestamp_local"], df["Consumo_total"], linewidth=0.8)
+    ax_serie.set_xlabel("Fecha (hora Colombia, UTC-5)")
     ax_serie.set_ylabel("Consumo total")
     ax_serie.set_title("Consumo total vs. Tiempo")
     fig_serie.autofmt_xdate()
@@ -292,7 +293,7 @@ with tab_datos:
 
     st.markdown(f"**Umbral de 'consumo alto'** (mediana): `{umbral:.2f}`")
 
-# ---------------------------------------------------------------
+
 # TAB: REGRESIÓN LINEAL
 # ---------------------------------------------------------------
 with tab_lineal:
@@ -343,9 +344,7 @@ with tab_lineal:
             """
         )
 
-# ---------------------------------------------------------------
-# TAB: K-MEANS
-# ---------------------------------------------------------------
+
 with tab_kmeans:
     st.header("K-Means — niveles de consumo (bajo, medio, alto)")
     st.markdown(
@@ -448,9 +447,7 @@ with tab_kmeans:
             """
         )
 
-# ---------------------------------------------------------------
-# Función compartida para KNN y SVM: mapa de clasificación por hora
-# ---------------------------------------------------------------
+
 
 def plot_clasificacion_por_hora(modelo, df, umbral, titulo):
     horas_grid = np.arange(0, 24, 0.1).reshape(-1, 1)
@@ -538,8 +535,7 @@ with tab_arbol:
         "que solo clasificar alto/bajo contra la mediana global."
     )
 
-    # Parámetros fijos, elegidos para que los cortes queden bien diferenciados y el
-    # árbol no se pierda en microcortes de sobreajuste cerca de la frontera:
+   
     profundidad = 3          # suficiente para separar anomalías por encima y por debajo
     min_hoja_pct = 3.0       # cada hoja necesita al menos 3% de los datos para formarse
     test_size_arbol = 0.3
@@ -552,10 +548,8 @@ with tab_arbol:
 
     min_hoja = max(1, int(len(df) * min_hoja_pct / 100))
 
-    # -----------------------------------------------------------
-    # Etiqueta de anomalía: desviación respecto al patrón típico de cada hora
-    # (misma lógica que un control estadístico tipo CUSUM, simplificada a un umbral fijo)
-    # -----------------------------------------------------------
+  
+   
     patron_media_hora = df.groupby("hora")["Consumo_total"].mean().reindex(range(24)).interpolate().bfill().ffill()
     patron_std_hora = df.groupby("hora")["Consumo_total"].std().reindex(range(24)).interpolate().bfill().ffill()
     patron_std_hora = patron_std_hora.replace(0, patron_std_hora[patron_std_hora > 0].min())
@@ -582,9 +576,7 @@ with tab_arbol:
             "(todo quedó como normal, o todo como anómalo). Ajusta el slider de sensibilidad."
         )
     else:
-        # Le damos al árbol la desviación ya calculada (no hora y consumo en bruto),
-        # para que no tenga que reconstruir a fuerza de cortes rectangulares una frontera
-        # que en realidad es curva (sube y baja según la hora).
+        
         X_arbol = df[["desviacion"]].values
         y_arbol = df["anomalo"].values
 
@@ -592,8 +584,7 @@ with tab_arbol:
             X_arbol, y_arbol, test_size=test_size_arbol, random_state=42, stratify=y_arbol
         )
 
-        # class_weight="balanced" es importante aquí: las anomalías suelen ser pocas,
-        # sin esto el árbol tiende a ignorarlas y predecir "normal" siempre.
+       
         arbol = entrenar_arbol(X_train, y_train, profundidad, min_hoja)
         pred_arbol = arbol.predict(X_test)
 
@@ -603,9 +594,7 @@ with tab_arbol:
         cm = confusion_matrix(y_test, pred_arbol, labels=[0, 1])
         recall_anomalo = cm[1, 1] / cm[1].sum() if cm[1].sum() > 0 else float("nan")
 
-        # Frontera de decisión en 2D: hora (eje x) vs Consumo_total (eje y).
-        # Para cada punto de la malla calculamos su desviación (según la hora de esa columna)
-        # y usamos esa desviación como entrada al árbol -> la frontera sigue el patrón horario.
+       
         h_min, h_max = -0.5, 23.5
         c_min, c_max = df["Consumo_total"].min() * 0.95, df["Consumo_total"].max() * 1.05
         hh, cc = np.meshgrid(np.linspace(h_min, h_max, 200), np.linspace(c_min, c_max, 200))
@@ -638,10 +627,7 @@ with tab_arbol:
             st.pyplot(fig_cm)
             plt.close(fig_cm)
 
-        # -----------------------------------------------------------
-        # Árbol dibujado, simplificado: solo condición de corte y clase por nodo
-        # (sin gini/samples/value, para que no quede saturado de texto)
-        # -----------------------------------------------------------
+      
         st.markdown("**Árbol de decisión:**")
         fig_tree, ax_tree = plt.subplots(figsize=(9, 2 + profundidad))
         dibujar_arbol_simple(arbol_full, ["desviación (σ)"], ["Normal", "Anómalo"], ax_tree)
@@ -656,9 +642,7 @@ with tab_arbol:
             "decisión) se colapsa en una sola hoja, para que cada corte visible signifique algo."
         )
 
-        # -----------------------------------------------------------
-        # Predicción interactiva: hora + valor de consumo -> ¿anómalo?
-        # -----------------------------------------------------------
+       
         st.markdown("**Probar una predicción**")
         pc1, pc2 = st.columns(2)
         hora_consulta = pc1.slider("Hora del día", 0, 23, 12, key="hora_consulta_arbol")
